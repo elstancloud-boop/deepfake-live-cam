@@ -5,7 +5,8 @@ Real-time face swap in the browser. Your webcam goes to the server over WebRTC (
 ## Run
 1. `pip install -r requirements.txt` (use `onnxruntime-gpu` instead of `onnxruntime` for an NVIDIA GPU)
 2. Download `inswapper_128.onnx` and place it at `models/inswapper_128.onnx` (or set `SWAP_MODEL`). Its license is non-commercial research only.
-3. `python server.py`, then open http://localhost:8080 (camera access needs localhost or HTTPS).
+3. Optional, for sharper and more realistic faces: download `GFPGANv1.4.pth` into `models/`. Set `ENHANCE=0` to turn it off (faster). `MOUTH_MASK=1` keeps your real mouth for accurate lip movement, and `SMOOTH` steadies the face tracking.
+4. `python server.py`, then open http://localhost:8080 (camera access needs localhost or HTTPS).
 
 Docker: `docker build -t dlc . && docker run -p 8080:8080 -v $PWD/models:/app/models dlc`
 

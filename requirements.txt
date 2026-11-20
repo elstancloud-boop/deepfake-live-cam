@@ -5,3 +5,5 @@ numpy
 opencv-python-headless
 insightface
 onnxruntime
+gfpgan
+basicsr
