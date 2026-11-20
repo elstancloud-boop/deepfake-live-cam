@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: deepfake-live-cam
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DECART_API_KEY
+        sync: false
+      - key: ACCESS_CODE
+        sync: false
