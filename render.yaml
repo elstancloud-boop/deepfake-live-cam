@@ -8,5 +8,15 @@ services:
     envVars:
       - key: DECART_API_KEY
         sync: false
-      - key: ACCESS_CODE
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PUBLIC_URL
+        value: https://deepfake-live-cam.onrender.com
+      - key: PRICE_PER_MIN
+        value: "10"
+      - key: NOWPAYMENTS_API_KEY
+        sync: false
+      - key: NOWPAYMENTS_IPN_SECRET
         sync: false

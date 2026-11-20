@@ -1,21 +1,12 @@
-# Deepfake Live Cam (Decart edition)
+# Deepfake Live Cam (public, paid edition)
 
-Browser-based live face swap with no local GPU. Your webcam streams over WebRTC to Decart's Lucy 2.6 realtime model, which swaps in the person from your reference photo, and the result streams back.
+Browser live face swap on Decart Lucy 2.6. Accounts, a required consent step, prepaid minutes metered by heartbeat, and crypto checkout via NOWPayments.
+
+- Decart's AI-generated watermark stays on the output. Do not remove it.
+- Before charging the public, confirm Decart's commercial/reseller terms with contact@decart.ai, have a lawyer review `public/terms.html`, and check your local rules on payments and synthetic media.
+- Metering limitation: a Decart session continues for as long as the browser keeps it open, even after a client token expires. The server stops issuing tokens and credits when balance hits zero, but a tampered browser could keep streaming. Ask Decart about server-side session control before heavy public use.
 
 ## Run
-1. Create an API key at https://platform.decart.ai
-2. `cp .env.example .env`, paste the key, and set `ACCESS_CODE` to a secret of your choice (never commit `.env`)
-3. `npm install && npm start`
-4. Open http://localhost:3000, choose a face photo, click Start.
-
-The server only mints short-lived tokens, so the permanent key never reaches the browser.
-
-## Cost
-Billed by Decart per second of active streaming: $0.02/sec standard, $0.04/sec fast mode (see https://docs.platform.decart.ai/getting-started/pricing). New accounts get free credits. Click Stop when done. The page shows an estimated cost.
-
-## Notes
-- The old local Python version (`server.py`, `swapper.py`, `Dockerfile`, `requirements.txt`, `static/`) is still in the repo as an offline option that needs an NVIDIA GPU.
-- Use only photos of people who have agreed to it. Decart's terms apply.
-
-## Deploy (Render)
-Use the included `render.yaml` Blueprint. Set `DECART_API_KEY` and `ACCESS_CODE` in the Render dashboard. Anyone with the access code can spend your Decart credits, so keep it private.
+Copy `.env.example` to `.env`, fill it in, then `npm install && npm start`.
+Payment webhook URL to set in NOWPayments: `<PUBLIC_URL>/api/ipn/nowpayments`.
+Add a second gateway in `payments.js` by implementing `createInvoice` and `verifyWebhook`.
