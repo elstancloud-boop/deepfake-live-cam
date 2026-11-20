@@ -1,13 +1,18 @@
-# Deepfake Live Cam
+# Deepfake Live Cam (Decart edition)
 
-Real-time face swap in the browser. Your webcam goes to the server over WebRTC (aiortc), faces are swapped with InsightFace `inswapper_128`, and the result streams back.
+Browser-based live face swap with no local GPU. Your webcam streams over WebRTC to Decart's Lucy 2.6 realtime model, which swaps in the person from your reference photo, and the result streams back.
 
 ## Run
-1. `pip install -r requirements.txt` (use `onnxruntime-gpu` instead of `onnxruntime` for an NVIDIA GPU)
-2. Download `inswapper_128.onnx` and place it at `models/inswapper_128.onnx` (or set `SWAP_MODEL`). Its license is non-commercial research only.
-3. Optional, for sharper and more realistic faces: download `GFPGANv1.4.pth` into `models/`. Set `ENHANCE=0` to turn it off (faster). `MOUTH_MASK=1` keeps your real mouth for accurate lip movement, and `SMOOTH` steadies the face tracking.
-4. `python server.py`, then open http://localhost:8080 (camera access needs localhost or HTTPS).
+1. Create an API key at https://platform.decart.ai
+2. `cp .env.example .env` and paste the key (never commit `.env`)
+3. `npm install && npm start`
+4. Open http://localhost:3000, choose a face photo, click Start.
 
-Docker: `docker build -t dlc . && docker run -p 8080:8080 -v $PWD/models:/app/models dlc`
+The server only mints short-lived tokens, so the permanent key never reaches the browser.
 
-CPU runs at a few FPS; a GPU is recommended. Only use photos of people who have agreed to it.
+## Cost
+Billed by Decart per second of active streaming: $0.02/sec standard, $0.04/sec fast mode (see https://docs.platform.decart.ai/getting-started/pricing). New accounts get free credits. Click Stop when done. The page shows an estimated cost.
+
+## Notes
+- The old local Python version (`server.py`, `swapper.py`, `Dockerfile`, `requirements.txt`, `static/`) is still in the repo as an offline option that needs an NVIDIA GPU.
+- Use only photos of people who have agreed to it. Decart's terms apply.
