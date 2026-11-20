@@ -11,7 +11,7 @@ button{padding:10px 20px;font-size:16px;margin:6px;cursor:pointer}
 <div class="row">Access code: <input type="password" id="code"></div>
 <div class="row"><input type="file" id="img" accept="image/jpeg,image/png,image/webp">
 <label><input type="checkbox" id="fast"> Fast mode (2x cost, lower latency)</label></div>
-<div class="row"><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
+<div class="row"><button id="start">Start</button><button id="stop" disabled>Stop</button><button id="pop">Pop out output</button></div>
 <div class="row">Status: <b id="status">idle</b> &nbsp; Time: <b id="secs">0</b>s &nbsp; Est. cost: $<b id="cost">0.00</b></div>
 <video id="local" autoplay muted playsinline></video><video id="remote" autoplay playsinline></video>
 <script type="module">
@@ -63,5 +63,14 @@ async function stop() {
   $("start").disabled = false; $("stop").disabled = true; $("status").textContent = "stopped";
 }
 $("stop").onclick = stop;
+$("pop").onclick = () => {
+  const s = $("remote").srcObject;
+  if (!s) { $("status").textContent = "start first, then pop out"; return; }
+  const w = window.open("", "output", "width=1280,height=720");
+  w.document.title = "Live output";
+  w.document.body.style.cssText = "margin:0;background:#000;overflow:hidden";
+  w.document.body.innerHTML = '<video autoplay playsinline muted style="width:100vw;height:100vh;object-fit:contain"></video>';
+  w.document.querySelector("video").srcObject = s;
+};
 window.addEventListener("beforeunload", stop);
 </script></body></html>
