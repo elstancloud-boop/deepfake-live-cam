@@ -1,29 +1,86 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Deepfake Live Cam</title>
 <style>
-body{font-family:system-ui;background:#111;color:#eee;text-align:center;padding:20px}
+body{font-family:system-ui;background:#111;color:#eee;text-align:center;padding:20px;max-width:1100px;margin:auto}
 video{width:46%;min-width:300px;background:#000;border-radius:8px;margin:6px}
-button{padding:10px 20px;font-size:16px;margin:6px;cursor:pointer}
-.row{margin:8px}
+button,input{padding:9px 16px;font-size:15px;margin:4px}button{cursor:pointer}
+.box{border:1px solid #333;border-radius:10px;padding:14px;margin:12px 0;text-align:left}
+.hide{display:none}small,a{color:#9ab}label{display:block;margin:6px 0}
 </style></head><body>
 <h1>Deepfake Live Cam</h1>
-<div class="row">1. Pick a clear, front-facing face photo (min 512x512, JPG/PNG/WebP)</div>
-<div class="row">Access code: <input type="password" id="code"></div>
-<div class="row"><input type="file" id="img" accept="image/jpeg,image/png,image/webp">
-<label><input type="checkbox" id="fast"> Fast mode (2x cost, lower latency)</label></div>
-<div class="row"><button id="start">Start</button><button id="stop" disabled>Stop</button><button id="pop">Pop out output</button></div>
-<div class="row">Status: <b id="status">idle</b> &nbsp; Time: <b id="secs">0</b>s &nbsp; Est. cost: $<b id="cost">0.00</b></div>
-<video id="local" autoplay muted playsinline></video><video id="remote" autoplay playsinline></video>
+<p><small>Output is AI-generated and carries the provider's AI watermark. <a href="/terms.html" target="_blank">Terms and rules</a></small></p>
+
+<div id="auth" class="box">
+  <b>Sign in or create an account</b><br>
+  <input id="email" type="email" placeholder="email"><input id="pw" type="password" placeholder="password (8+ chars)">
+  <label><input type="checkbox" id="age"> I am 18 or older</label>
+  <label><input type="checkbox" id="tos"> I accept the <a href="/terms.html" target="_blank">terms</a></label>
+  <button id="login">Log in</button><button id="signup">Sign up</button> <span id="amsg"></span>
+</div>
+
+<div id="app" class="hide">
+  <div class="box">
+    Signed in as <b id="who"></b> &nbsp; Balance: <b id="bal">0</b> min <button id="logout">Log out</button><br>
+    Buy minutes (<span id="ppm"></span> USD per minute, crypto):
+    <input id="mins" type="number" min="1" max="120" value="1" style="width:70px">
+    <button id="buy">Pay with crypto</button> <span id="bmsg"></span>
+  </div>
+
+  <div class="box">
+    <div>1. Choose a clear, front-facing photo (min 512x512)</div>
+    <input type="file" id="img" accept="image/jpeg,image/png,image/webp">
+    <label><input type="checkbox" id="fast"> Fast mode (uses minutes at 2x)</label>
+    <div>2. Confirm consent</div>
+    <label><input type="checkbox" id="c1"> This face is mine, or the person has clearly agreed to this use.</label>
+    <label><input type="checkbox" id="c2"> I will not use this to impersonate someone or deceive people into thinking they are talking to a real person.</label>
+    <button id="start">Start</button><button id="stop" disabled>Stop</button><button id="pop">Pop out output</button>
+    <div>Status: <b id="status">idle</b> &nbsp; Minutes left: <b id="left">-</b></div>
+  </div>
+  <video id="local" autoplay muted playsinline></video><video id="remote" autoplay playsinline></video>
+  <p><small>Misuse? <button id="report">Report abuse</button></small></p>
+</div>
+
 <script type="module">
 import { createDecartClient, models } from "https://esm.sh/@decartai/sdk";
 const $ = id => document.getElementById(id);
-let rt, stream;
+const post = (u, b) => fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) });
 const PROMPT = "Substitute the character in the video with the person in the reference image.";
+let rt, stream, sessionId, beat;
+const mins = s => (s / 60).toFixed(1);
+
+async function refresh() {
+  const r = await fetch("/api/me");
+  if (!r.ok) { $("auth").classList.remove("hide"); $("app").classList.add("hide"); return; }
+  const m = await r.json();
+  $("auth").classList.add("hide"); $("app").classList.remove("hide");
+  $("who").textContent = m.email; $("bal").textContent = mins(m.seconds); $("ppm").textContent = m.pricePerMin;
+}
+async function authCall(path) {
+  const r = await post(path, { email: $("email").value, password: $("pw").value, age18: $("age").checked, tos: $("tos").checked });
+  const j = await r.json();
+  if (!r.ok) { $("amsg").textContent = j.error; return; }
+  $("amsg").textContent = ""; refresh();
+}
+$("login").onclick = () => authCall("/api/login");
+$("signup").onclick = () => authCall("/api/signup");
+$("logout").onclick = async () => { await stop(); await post("/api/logout"); refresh(); };
+
+$("buy").onclick = async () => {
+  const r = await post("/api/checkout", { minutes: Number($("mins").value), provider: "nowpayments" });
+  const j = await r.json();
+  if (!r.ok) { $("bmsg").textContent = j.error; return; }
+  window.open(j.url, "_blank");
+  $("bmsg").textContent = "Complete the payment in the new tab. Balance updates once the network confirms it.";
+};
+setInterval(() => { if (!rt) refresh(); }, 15000);
+
+const sha256 = async f => [...new Uint8Array(await crypto.subtle.digest("SHA-256", await f.arrayBuffer()))].map(b => b.toString(16).padStart(2, "0")).join("");
 
 const client = createDecartClient({
   apiKeyProvider: async () => {
-    const r = await fetch("/api/realtime-token", { method: "POST", headers: { "x-access-code": $("code").value } });
-    if (!r.ok) throw new Error(r.status === 401 ? "wrong access code" : "token request failed");
+    if (!sessionId) throw new Error("no session");
+    const r = await post("/api/realtime-token", { sessionId });
+    if (!r.ok) throw new Error("token refused");
     return (await r.json()).apiKey;
   },
 });
@@ -31,38 +88,47 @@ const client = createDecartClient({
 $("start").onclick = async () => {
   const file = $("img").files[0];
   if (!file) { $("status").textContent = "pick a photo first"; return; }
+  if (!$("c1").checked || !$("c2").checked) { $("status").textContent = "both consent boxes are required"; return; }
   $("start").disabled = true;
   try {
-    const model = models.realtime("lucy-2.6");
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { frameRate: model.fps, width: model.width, height: model.height }, audio: false });
-    $("local").srcObject = stream;
+    const cr = await post("/api/consent", { photoSha256: await sha256(file), ownFaceOrPermission: true, noDeception: true });
+    if (!cr.ok) throw new Error((await cr.json()).error);
     const fast = $("fast").checked;
+    const sr = await post("/api/session/start", { consentId: (await cr.json()).consentId, fast });
+    const sj = await sr.json();
+    if (!sr.ok) throw new Error(sj.error);
+    sessionId = sj.sessionId; $("left").textContent = mins(sj.seconds);
+
+    const model = models.realtime("lucy-2.6");
+    stream = await navigator.mediaDevices.getUserMedia({ video: { frameRate: model.fps, width: model.width, height: model.height }, audio: false });
+    $("local").srcObject = stream;
     rt = await client.realtime.connect(stream, {
       model, mirror: "auto", ...(fast ? { speed: "fast" } : {}),
       onRemoteStream: s => { $("remote").srcObject = s; },
     });
     rt.on("connectionChange", s => { $("status").textContent = s; });
-    rt.on("generationTick", ({ seconds }) => {
-      $("secs").textContent = seconds;
-      $("cost").textContent = (seconds * (fast ? 0.04 : 0.02)).toFixed(2);
-    });
     rt.on("error", e => { $("status").textContent = "error: " + e.message; });
     await rt.set({ prompt: PROMPT, enhance: true, image: file });
     $("stop").disabled = false;
-  } catch (e) {
-    $("status").textContent = "error: " + e.message;
-    $("start").disabled = false;
-  }
+    beat = setInterval(async () => {
+      const b = await (await post("/api/session/beat", { sessionId })).json();
+      $("left").textContent = mins(b.seconds);
+      if (b.stop) { $("status").textContent = "out of minutes"; stop(); }
+    }, 5000);
+  } catch (e) { $("status").textContent = "error: " + e.message; await stop(); }
 };
 
 async function stop() {
+  clearInterval(beat);
   try { rt?.disconnect(); } catch {}
+  rt = null;
   stream?.getTracks().forEach(t => t.stop());
+  if (sessionId) { await post("/api/session/end", { sessionId }); sessionId = null; }
   $("local").srcObject = null; $("remote").srcObject = null;
-  $("start").disabled = false; $("stop").disabled = true; $("status").textContent = "stopped";
+  $("start").disabled = false; $("stop").disabled = true;
+  refresh();
 }
-$("stop").onclick = stop;
+$("stop").onclick = async () => { await stop(); $("status").textContent = "stopped"; };
 $("pop").onclick = () => {
   const s = $("remote").srcObject;
   if (!s) { $("status").textContent = "start first, then pop out"; return; }
@@ -72,5 +138,9 @@ $("pop").onclick = () => {
   w.document.body.innerHTML = '<video autoplay playsinline muted style="width:100vw;height:100vh;object-fit:contain"></video>';
   w.document.querySelector("video").srcObject = s;
 };
-window.addEventListener("beforeunload", stop);
+$("report").onclick = async () => {
+  const reason = prompt("Describe the misuse:"); if (reason) { await post("/api/report", { reason }); alert("Thanks, report received."); }
+};
+window.addEventListener("pagehide", () => { if (sessionId) navigator.sendBeacon("/api/session/end", new Blob([JSON.stringify({ sessionId })], { type: "application/json" })); });
+refresh();
 </script></body></html>
