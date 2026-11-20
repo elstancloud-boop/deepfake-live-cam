@@ -1,0 +1,65 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deepfake Live Cam</title>
+<style>
+body{font-family:system-ui;background:#111;color:#eee;text-align:center;padding:20px}
+video{width:46%;min-width:300px;background:#000;border-radius:8px;margin:6px}
+button{padding:10px 20px;font-size:16px;margin:6px;cursor:pointer}
+.row{margin:8px}
+</style></head><body>
+<h1>Deepfake Live Cam</h1>
+<div class="row">1. Pick a clear, front-facing face photo (min 512x512, JPG/PNG/WebP)</div>
+<div class="row"><input type="file" id="img" accept="image/jpeg,image/png,image/webp">
+<label><input type="checkbox" id="fast"> Fast mode (2x cost, lower latency)</label></div>
+<div class="row"><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
+<div class="row">Status: <b id="status">idle</b> &nbsp; Time: <b id="secs">0</b>s &nbsp; Est. cost: $<b id="cost">0.00</b></div>
+<video id="local" autoplay muted playsinline></video><video id="remote" autoplay playsinline></video>
+<script type="module">
+import { createDecartClient, models } from "https://esm.sh/@decartai/sdk";
+const $ = id => document.getElementById(id);
+let rt, stream;
+const PROMPT = "Substitute the character in the video with the person in the reference image.";
+
+const client = createDecartClient({
+  apiKeyProvider: async () => {
+    const r = await fetch("/api/realtime-token", { method: "POST" });
+    return (await r.json()).apiKey;
+  },
+});
+
+$("start").onclick = async () => {
+  const file = $("img").files[0];
+  if (!file) { $("status").textContent = "pick a photo first"; return; }
+  $("start").disabled = true;
+  try {
+    const model = models.realtime("lucy-2.6");
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { frameRate: model.fps, width: model.width, height: model.height }, audio: false });
+    $("local").srcObject = stream;
+    const fast = $("fast").checked;
+    rt = await client.realtime.connect(stream, {
+      model, mirror: "auto", ...(fast ? { speed: "fast" } : {}),
+      onRemoteStream: s => { $("remote").srcObject = s; },
+    });
+    rt.on("connectionChange", s => { $("status").textContent = s; });
+    rt.on("generationTick", ({ seconds }) => {
+      $("secs").textContent = seconds;
+      $("cost").textContent = (seconds * (fast ? 0.04 : 0.02)).toFixed(2);
+    });
+    rt.on("error", e => { $("status").textContent = "error: " + e.message; });
+    await rt.set({ prompt: PROMPT, enhance: true, image: file });
+    $("stop").disabled = false;
+  } catch (e) {
+    $("status").textContent = "error: " + e.message;
+    $("start").disabled = false;
+  }
+};
+
+async function stop() {
+  try { rt?.disconnect(); } catch {}
+  stream?.getTracks().forEach(t => t.stop());
+  $("local").srcObject = null; $("remote").srcObject = null;
+  $("start").disabled = false; $("stop").disabled = true; $("status").textContent = "stopped";
+}
+$("stop").onclick = stop;
+window.addEventListener("beforeunload", stop);
+</script></body></html>
