@@ -1,0 +1,25 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deepfake Live Cam</title>
+<style>body{font-family:system-ui;background:#111;color:#eee;text-align:center;padding:20px}video{width:46%;min-width:300px;background:#000;border-radius:8px;margin:6px}button{padding:10px 20px;font-size:16px;margin:6px}</style></head>
+<body><h1>Deepfake Live Cam</h1>
+<p>1. Choose a face photo &nbsp; 2. Start</p>
+<input type="file" id="img" accept="image/*"> <button id="start">Start</button> <span id="msg"></span><br>
+<video id="local" autoplay muted playsinline></video><video id="remote" autoplay playsinline></video>
+<script>
+const $=id=>document.getElementById(id);
+$('start').onclick=async()=>{
+  const f=$('img').files[0]; if(!f){$('msg').textContent='Pick a photo first';return}
+  const fd=new FormData(); fd.append('image',f);
+  const r=await fetch('/source',{method:'POST',body:fd});
+  if(!r.ok){$('msg').textContent='No face found in that photo';return}
+  const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480},audio:false});
+  $('local').srcObject=stream;
+  const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  pc.ontrack=e=>{$('remote').srcObject=e.streams[0]};
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise(res=>{if(pc.iceGatheringState==='complete')res();else pc.onicegatheringstatechange=()=>pc.iceGatheringState==='complete'&&res()});
+  const a=await (await fetch('/offer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:pc.localDescription.sdp,type:pc.localDescription.type})})).json();
+  await pc.setRemoteDescription(a); $('msg').textContent='Live';
+};
+</script></body></html>
