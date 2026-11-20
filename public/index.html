@@ -8,6 +8,7 @@ button{padding:10px 20px;font-size:16px;margin:6px;cursor:pointer}
 </style></head><body>
 <h1>Deepfake Live Cam</h1>
 <div class="row">1. Pick a clear, front-facing face photo (min 512x512, JPG/PNG/WebP)</div>
+<div class="row">Access code: <input type="password" id="code"></div>
 <div class="row"><input type="file" id="img" accept="image/jpeg,image/png,image/webp">
 <label><input type="checkbox" id="fast"> Fast mode (2x cost, lower latency)</label></div>
 <div class="row"><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
@@ -21,7 +22,8 @@ const PROMPT = "Substitute the character in the video with the person in the ref
 
 const client = createDecartClient({
   apiKeyProvider: async () => {
-    const r = await fetch("/api/realtime-token", { method: "POST" });
+    const r = await fetch("/api/realtime-token", { method: "POST", headers: { "x-access-code": $("code").value } });
+    if (!r.ok) throw new Error(r.status === 401 ? "wrong access code" : "token request failed");
     return (await r.json()).apiKey;
   },
 });
