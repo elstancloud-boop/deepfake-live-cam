@@ -30,12 +30,15 @@ button,input{padding:9px 16px;font-size:15px;margin:4px}button{cursor:pointer}
     <div>1. Choose a clear, front-facing photo (min 512x512)</div>
     <input type="file" id="img" accept="image/jpeg,image/png,image/webp">
     <label><input type="checkbox" id="fast"> Fast mode (uses minutes at 2x)</label>
+    <div id="voicebox" class="hide">Voice (optional, approved voices only, adds a few seconds of delay, costs +0.5x): <select id="voice"><option value="">No voice change</option></select></div>
     <div>2. Confirm consent</div>
     <label><input type="checkbox" id="c1"> This face is mine, or the person has clearly agreed to this use.</label>
     <label><input type="checkbox" id="c2"> I will not use this to impersonate someone or deceive people into thinking they are talking to a real person.</label>
+    <label><input type="checkbox" id="c3"> I understand the output is AI-generated and I will tell anyone I show it to.</label>
     <button id="start">Start</button><button id="stop" disabled>Stop</button><button id="pop">Pop out output</button>
     <div>Status: <b id="status">idle</b> &nbsp; Minutes left: <b id="left">-</b></div>
   </div>
+  <div id="aivoice" class="hide" style="background:#7a1f1f;padding:6px;border-radius:6px">AI VOICE ACTIVE: audio you hear is AI-generated</div>
   <video id="local" autoplay muted playsinline></video><video id="remote" autoplay playsinline></video>
   <p><small>Misuse? <button id="report">Report abuse</button></small></p>
 </div>
@@ -43,7 +46,8 @@ button,input{padding:9px 16px;font-size:15px;margin:4px}button{cursor:pointer}
 <script type="module">
 import { createDecartClient, models } from "https://esm.sh/@decartai/sdk";
 const $ = id => document.getElementById(id);
-const post = (u, b) => fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) });
+const H = { "Content-Type": "application/json", "X-Requested-With": "dlc" };
+const post = (u, b) => fetch(u, { method: "POST", headers: H, body: JSON.stringify(b || {}) });
 const PROMPT = "Substitute the character in the video with the person in the reference image.";
 let rt, stream, sessionId, beat;
 const mins = s => (s / 60).toFixed(1);
@@ -52,8 +56,10 @@ async function refresh() {
   const r = await fetch("/api/me");
   if (!r.ok) { $("auth").classList.remove("hide"); $("app").classList.add("hide"); return; }
   const m = await r.json();
+  if (m.voices?.length && !$("voice").dataset.loaded) { m.voices.forEach(v => $("voice").add(new Option(v.label, v.id))); $("voice").dataset.loaded = 1; $("voicebox").classList.remove("hide"); }
+  if (m.role === "admin") $("who").innerHTML = m.email + ' (<a href="/admin/">admin</a>)';
   $("auth").classList.add("hide"); $("app").classList.remove("hide");
-  $("who").textContent = m.email; $("bal").textContent = mins(m.seconds); $("ppm").textContent = m.pricePerMin;
+  if (m.role !== "admin") $("who").textContent = m.email; $("bal").textContent = mins(m.seconds); $("ppm").textContent = m.pricePerMin;
 }
 async function authCall(path) {
   const r = await post(path, { email: $("email").value, password: $("pw").value, age18: $("age").checked, tos: $("tos").checked });
@@ -88,10 +94,10 @@ const client = createDecartClient({
 $("start").onclick = async () => {
   const file = $("img").files[0];
   if (!file) { $("status").textContent = "pick a photo first"; return; }
-  if (!$("c1").checked || !$("c2").checked) { $("status").textContent = "both consent boxes are required"; return; }
+  if (!$("c1").checked || !$("c2").checked || !$("c3").checked) { $("status").textContent = "both consent boxes are required"; return; }
   $("start").disabled = true;
   try {
-    const cr = await post("/api/consent", { photoSha256: await sha256(file), ownFaceOrPermission: true, noDeception: true });
+    const cr = await post("/api/consent", { photoSha256: await sha256(file), ownFaceOrPermission: true, noDeception: true, voiceId: $("voice").value || null });
     if (!cr.ok) throw new Error((await cr.json()).error);
     const fast = $("fast").checked;
     const sr = await post("/api/session/start", { consentId: (await cr.json()).consentId, fast });
@@ -110,6 +116,7 @@ $("start").onclick = async () => {
     rt.on("error", e => { $("status").textContent = "error: " + e.message; });
     await rt.set({ prompt: PROMPT, enhance: true, image: file });
     $("stop").disabled = false;
+    if ($("voice").value) startVoice();
     beat = setInterval(async () => {
       const b = await (await post("/api/session/beat", { sessionId })).json();
       $("left").textContent = mins(b.seconds);
@@ -118,7 +125,33 @@ $("start").onclick = async () => {
   } catch (e) { $("status").textContent = "error: " + e.message; await stop(); }
 };
 
+// ---- voice: record mic in 4s chunks, convert on server, play result ----
+let vrec, vq = [], vplaying = false, vstop = false;
+async function startVoice() {
+  vstop = false; $("aivoice").classList.remove("hide"); $("remote").muted = true;
+  const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const loop = () => {
+    if (vstop) { mic.getTracks().forEach(t => t.stop()); return; }
+    vrec = new MediaRecorder(mic, { mimeType: "audio/webm" }); const parts = [];
+    vrec.ondataavailable = e => parts.push(e.data);
+    vrec.onstop = async () => {
+      loop();
+      const blob = new Blob(parts, { type: "audio/webm" }); if (blob.size < 2000 || !sessionId) return;
+      try {
+        const r = await fetch("/api/voice/convert", { method: "POST", headers: { "X-Requested-With": "dlc", "x-session-id": sessionId, "Content-Type": "audio/webm" }, body: blob });
+        if (r.ok) { vq.push(URL.createObjectURL(await r.blob())); playNext(); }
+      } catch {}
+    };
+    vrec.start(); setTimeout(() => vrec.state === "recording" && vrec.stop(), 4000);
+  };
+  loop();
+}
+function playNext() {
+  if (vplaying || !vq.length) return; vplaying = true;
+  const a = new Audio(vq.shift()); a.onended = a.onerror = () => { vplaying = false; playNext(); }; a.play().catch(() => { vplaying = false; });
+}
 async function stop() {
+  vstop = true; try { vrec?.state === "recording" && vrec.stop(); } catch {} vq = []; $("aivoice").classList.add("hide");
   clearInterval(beat);
   try { rt?.disconnect(); } catch {}
   rt = null;
@@ -141,6 +174,6 @@ $("pop").onclick = () => {
 $("report").onclick = async () => {
   const reason = prompt("Describe the misuse:"); if (reason) { await post("/api/report", { reason }); alert("Thanks, report received."); }
 };
-window.addEventListener("pagehide", () => { if (sessionId) navigator.sendBeacon("/api/session/end", new Blob([JSON.stringify({ sessionId })], { type: "application/json" })); });
+window.addEventListener("pagehide", () => { if (sessionId) fetch("/api/session/end", { method: "POST", keepalive: true, headers: H, body: JSON.stringify({ sessionId }) }); });
 refresh();
 </script></body></html>
