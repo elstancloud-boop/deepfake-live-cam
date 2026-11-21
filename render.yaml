@@ -17,7 +17,7 @@ services:
       - key: PUBLIC_URL
         value: https://deepfake-live-cam.onrender.com
       - key: PRICE_PER_MIN
-        value: "10"
+        value: "2"
       - key: ADMIN_EMAILS
         sync: false
       - key: ADMIN_IPS

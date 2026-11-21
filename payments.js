@@ -1,7 +1,7 @@
 import crypto from "crypto";
 
 // Price per minute of swapping, in USD. Fast mode burns minutes at 2x.
-export const PRICE_PER_MIN = Number(process.env.PRICE_PER_MIN || 10);
+export const PRICE_PER_MIN = Number(process.env.PRICE_PER_MIN || 2);
 
 // Each provider: createInvoice(order, urls) -> { url, ref }, verifyWebhook(req) -> { orderId, paid } | null
 export const providers = {

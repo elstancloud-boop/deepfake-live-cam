@@ -200,7 +200,7 @@ app.post("/api/checkout", auth, limit("ck", 20, 3600e3), async (req, res) => {
   const minutes = Math.floor(Number(req.body?.minutes));
   const provider = req.body?.provider || "nowpayments";
   if (!providers[provider]) return res.status(400).json({ error: "Unknown provider." });
-  if (!(minutes >= 1 && minutes <= 120)) return res.status(400).json({ error: "1 to 120 minutes." });
+  if (!(minutes >= 5 && minutes <= 120)) return res.status(400).json({ error: "5 to 120 minutes (5-minute minimum, $10)." });
   const order = { id: crypto.randomUUID(), minutes, usd: (minutes * PRICE_PER_MIN).toFixed(2) };
   await q("INSERT INTO orders(id,user_id,minutes,usd,provider) VALUES($1,$2,$3,$4,$5)", [order.id, req.user.id, minutes, order.usd, provider]);
   try {
