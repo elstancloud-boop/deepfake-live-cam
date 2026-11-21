@@ -1,0 +1,55 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin</title>
+<style>
+body{font-family:system-ui;background:#111;color:#eee;padding:16px;max-width:1200px;margin:auto}
+table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #333;padding:5px 8px;text-align:left;font-size:13px}
+button,input{padding:5px 10px;margin:2px}nav button{font-size:15px}.cards span{display:inline-block;background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:8px 14px;margin:4px}
+a{color:#9ab}
+</style></head><body>
+<h1>Admin <small><a href="/">back to app</a></small></h1>
+<div id="denied" style="display:none">Admin access required. <a href="/">Log in</a> with an admin account.</div>
+<div id="main" style="display:none">
+<div class="cards" id="stats"></div>
+<nav><button data-t="users">Users</button><button data-t="live">Live sessions</button><button data-t="orders">Orders</button><button data-t="reports">Reports</button><button data-t="voices">Voices</button><button data-t="audit">Audit log</button></nav>
+<div id="view"></div>
+</div>
+<script>
+const H = { "Content-Type": "application/json", "X-Requested-With": "dlc" };
+const api = (p, body) => fetch("/api/admin" + p, body === undefined ? {} : { method: "POST", headers: H, body: JSON.stringify(body) }).then(r => r.ok ? r.json() : Promise.reject(r.status));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const tbl = (cols, rows, act) => "<table><tr>" + cols.map(c => `<th>${esc(c)}</th>`).join("") + (act ? "<th></th>" : "") + "</tr>" +
+  rows.map(r => "<tr>" + cols.map(c => `<td>${esc(r[c])}</td>`).join("") + (act ? `<td>${act(r)}</td>` : "") + "</tr>").join("") + "</table>";
+const v = html => document.getElementById("view").innerHTML = html;
+const views = {
+  async users(q = "") {
+    const rows = await api("/users?q=" + encodeURIComponent(q));
+    v(`<input id="uq" placeholder="search email" value="${esc(q)}"><button onclick="views.users(document.getElementById('uq').value)">Search</button>` +
+      tbl(["id", "email", "role", "seconds", "banned", "created_at"], rows, r =>
+        `<button onclick="views.user(${r.id})">Open</button>`));
+  },
+  async user(id) {
+    const d = await api("/users/" + id), u = d.user;
+    v(`<h3>${esc(u.email)} (${esc(u.role)}) balance ${Math.round(u.seconds / 60 * 10) / 10} min ${u.banned ? "<b>BANNED</b>" : ""}</h3>
+      <button onclick="act('/users/${id}/ban',{banned:${!u.banned},reason:${u.banned ? "''" : "prompt('Reason?')||''"}},${id})">${u.banned ? "Unban" : "Ban"}</button>
+      <button onclick="act('/users/${id}/credit',{minutes:Number(prompt('Minutes to add (negative to remove)?')||0)},${id})">Adjust minutes</button>
+      <button onclick="act('/users/${id}/revoke-logins',{},${id})">Log out everywhere</button>
+      <h4>Sessions</h4>` + tbl(["id", "fast", "voice", "started_at", "ended_at", "seconds_billed"], d.sessions) +
+      "<h4>Orders</h4>" + tbl(["id", "minutes", "usd", "provider", "status", "created_at"], d.orders) +
+      "<h4>Consents</h4>" + tbl(["id", "photo_sha256", "voice_id", "ip", "created_at"], d.consents));
+  },
+  async live() { v(tbl(["id", "email", "fast", "voice", "started_at", "seconds_billed"], await api("/sessions/live"), r => `<button onclick="act('/sessions/${r.id}/kill',{})">Kill</button>`)); },
+  async orders() { v(tbl(["id", "email", "minutes", "usd", "provider", "status", "created_at"], await api("/orders"))); },
+  async reports() { v(tbl(["id", "email", "reason", "status", "created_at"], await api("/reports"), r => r.status === "open" ? `<button onclick="act('/reports/${r.id}/resolve',{})">Resolve</button>` : "")); },
+  async voices() {
+    v(`<div>Add an approved voice (ElevenLabs voice ID). Only voices that belong to you or are licensed for this use.<br>
+      <input id="vl" placeholder="label"><input id="vi" placeholder="ElevenLabs voice id"><button onclick="act('/voices',{label:vl.value,elevenVoiceId:vi.value})">Add</button></div>` +
+      tbl(["id", "label", "eleven_voice_id", "enabled"], await api("/voices"), r => `<button onclick="act('/voices/${r.id}/toggle',{})">Toggle</button>`));
+  },
+  async audit() { v(tbl(["id", "admin_email", "action", "target", "ip", "created_at"], await api("/audit"))); },
+};
+let cur = "users";
+async function act(p, b, back) { try { await api(p, b); } catch (e) { alert("Failed: " + e); } back ? views.user(back) : views[cur](); stats(); }
+async function stats() { const s = await api("/stats"); document.getElementById("stats").innerHTML = Object.entries(s).map(([k, x]) => `<span>${esc(k)}: <b>${esc(x)}</b></span>`).join(""); }
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => { cur = b.dataset.t; views[cur](); });
+api("/stats").then(() => { document.getElementById("main").style.display = ""; stats(); views.users(); }).catch(() => document.getElementById("denied").style.display = "");
+</script></body></html>
