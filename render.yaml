@@ -6,6 +6,8 @@ services:
     buildCommand: npm install
     startCommand: npm start
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: DECART_API_KEY
         sync: false
       - key: DATABASE_URL
@@ -16,6 +18,12 @@ services:
         value: https://deepfake-live-cam.onrender.com
       - key: PRICE_PER_MIN
         value: "10"
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: ADMIN_IPS
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
       - key: NOWPAYMENTS_API_KEY
         sync: false
       - key: NOWPAYMENTS_IPN_SECRET
